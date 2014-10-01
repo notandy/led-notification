@@ -23,9 +23,11 @@
 
 #define PURPLE_PLUGINS
 
-#define VERSION "0.2"
+#define VERSION "0.3"
 
 #include <glib.h>
+#include <glib/gi18n.h>
+
 #include <string.h>
 #include <stdio.h>
 
@@ -34,12 +36,7 @@
 #include "version.h"
 #include "debug.h"
 #include "cmds.h"
-#include "gtkconv.h"
 #include "prefs.h"
-#include "gtkprefs.h"
-#include "gtkutils.h"
-#include "gtkplugin.h"
-#include "gtkblist.h"
 
 void led_set(gboolean state) {
   const char *filename=purple_prefs_get_string("/plugins/gtk/gtk-simom-lednot/filename");
@@ -97,108 +94,96 @@ void led_set(gboolean state) {
   }
 }
 
-GList *get_pending_list(guint max) {
+gboolean get_pending_list() {
   const char *im=purple_prefs_get_string("/plugins/gtk/gtk-simom-lednot/im");
   const char *chat=purple_prefs_get_string("/plugins/gtk/gtk-simom-lednot/chat");
-  GList *l_im = NULL;
-  GList *l_chat = NULL;
+  GList *l = NULL;
 
-
-  if (im != NULL && strcmp(im, "always") == 0) {
-    l_im = pidgin_conversations_find_unseen_list(PURPLE_CONV_TYPE_IM,
-						 PIDGIN_UNSEEN_TEXT,
-						 FALSE, max);
-  } else if (im != NULL && strcmp(im, "hidden") == 0) {
-    l_im = pidgin_conversations_find_unseen_list(PURPLE_CONV_TYPE_IM,
-						 PIDGIN_UNSEEN_TEXT,
-						 TRUE, max);
-  }
-
-  if (chat != NULL && strcmp(chat, "always") == 0) {
-    l_chat = pidgin_conversations_find_unseen_list(PURPLE_CONV_TYPE_CHAT,
-						   PIDGIN_UNSEEN_TEXT,
-						   FALSE, max);
-  } else if (chat != NULL && strcmp(chat, "nick") == 0) {
-    l_chat = pidgin_conversations_find_unseen_list(PURPLE_CONV_TYPE_CHAT,
-						   PIDGIN_UNSEEN_NICK,
-						   FALSE, max);
-  }
-
-  if (l_im != NULL && l_chat != NULL)
-    return g_list_concat(l_im, l_chat);
-  else if (l_im != NULL)
-    return l_im;
+  if(im != NULL && chat != NULL)
+    l = purple_get_conversations();
+  else if(im != NULL)
+    l = purple_get_ims();
+  else if(chat != NULL)
+    l = purple_get_chats();
   else
-    return l_chat;
+    return FALSE;
+
+  for (; l != NULL; l = l->next) {
+    PurpleConversation *conv = (PurpleConversation*)l->data;
+    if(conv == NULL)
+      continue;
+      
+    if(GPOINTER_TO_INT(purple_conversation_get_data(conv, "unseen-count")))
+      return TRUE;
+  }
+
+  return FALSE;
 }
 
 static void lednot_conversation_updated(PurpleConversation *conv,
                                         PurpleConvUpdateType type) {
-  GList *list;
-
   if( type != PURPLE_CONV_UPDATE_UNSEEN ) {return;}
 
 #if 0
   purple_debug_info("Led-notification", "Change in unseen conversations\n");
 #endif
 
-  list=get_pending_list(1);
-
-  if(list==NULL) {
+  if(!get_pending_list()) {
     led_set(FALSE);
-  } else if(list!=NULL) {
+  } else {
     led_set(TRUE);
   }
-  g_list_free(list);
 }
 
-static GtkWidget *plugin_config_frame(PurplePlugin *plugin) {
-  GtkWidget *frame;
-  GtkWidget *vbox;
-  GtkWidget *vbox2;
-  GtkSizeGroup *sg;
-  GtkWidget *dd;
-  GtkWidget *ent;
+static PurplePluginPrefFrame *
+get_plugin_pref_frame(PurplePlugin *plugin)
+{
+  PurplePluginPrefFrame *frame;
+  PurplePluginPref *ppref;
 
-  frame = gtk_vbox_new(FALSE, 18);
-  gtk_container_set_border_width(GTK_CONTAINER(frame), 12);
+  frame = purple_plugin_pref_frame_new();
 
-  vbox = pidgin_make_frame(frame, "Inform about unread...");
-  vbox2 = pidgin_make_frame(frame, "Hardware setup:");
-  sg = gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL);
+  ppref = purple_plugin_pref_new_with_label("Inform about unread...");
+  purple_plugin_pref_frame_add(frame, ppref);
 
-  dd = pidgin_prefs_dropdown(vbox, "Instant Messages:",
-			     PURPLE_PREF_STRING,
-			     "/plugins/gtk/gtk-simom-lednot/im",
-			     "Never", "never",
-			     "In hidden conversations", "hidden",
-			     "Always", "always",
-			     NULL);
-  gtk_size_group_add_widget(sg, dd);
+  ppref = purple_plugin_pref_new_with_name_and_label(
+    "/plugins/gtk/gtk-simom-lednot/im",
+    _("Instant Messages:")
+  );
+  purple_plugin_pref_set_type(ppref, PURPLE_PLUGIN_PREF_CHOICE);
+  purple_plugin_pref_add_choice(ppref, "Never", "never");
+  purple_plugin_pref_add_choice(ppref, "Always", "always");
+  purple_plugin_pref_frame_add(frame, ppref);
 
-  dd = pidgin_prefs_dropdown(vbox, "Chat Messages:",
-			     PURPLE_PREF_STRING,
-			     "/plugins/gtk/gtk-simom-lednot/chat",
-			     "Never", "never",
-			     "When my nick is said", "nick",
-			     "Always", "always",
-			     NULL);
-  gtk_size_group_add_widget(sg, dd);
+  ppref = purple_plugin_pref_new_with_name_and_label(
+    "/plugins/gtk/gtk-simom-lednot/chat",
+    _("Chat Messages:")
+  );
+  purple_plugin_pref_set_type(ppref, PURPLE_PLUGIN_PREF_CHOICE);
+  purple_plugin_pref_add_choice(ppref, "Never", "never");
+  purple_plugin_pref_add_choice(ppref, "Always", "always");
+  purple_plugin_pref_frame_add(frame, ppref);
 
-  ent=pidgin_prefs_labeled_entry(vbox2,"File to control led:",
-				 "/plugins/gtk/gtk-simom-lednot/filename",sg);
+  ppref = purple_plugin_pref_new_with_label("Hardware setup:");
+  purple_plugin_pref_frame_add(frame, ppref);
 
-  dd = pidgin_prefs_dropdown(vbox2,"LED file format:",
-			     PURPLE_PREF_STRING,
-			     "/plugins/gtk/gtk-simom-lednot/format",
-			     "1 = on, 0 = off", "num",
-			     "'on' = on, 'off' = off", "word",
-			     "'0 blink' = on, '0 on' = off", "pair",
-			     "XSet (Specify LED number in filename)", "xset",
-			     NULL);
-  gtk_size_group_add_widget(sg, dd);
+  ppref = purple_plugin_pref_new_with_name_and_label(
+    "/plugins/gtk/gtk-simom-lednot/filename",
+    _("File to control led:")
+  );
+  purple_plugin_pref_frame_add(frame, ppref);
 
-  gtk_widget_show_all(frame);
+  ppref = purple_plugin_pref_new_with_name_and_label(
+    "/plugins/gtk/gtk-simom-lednot/format",
+    _("LED file format:")
+  );
+  purple_plugin_pref_set_type(ppref, PURPLE_PLUGIN_PREF_CHOICE);
+  purple_plugin_pref_add_choice(ppref, "1 = on, 0 = off", "num");
+  purple_plugin_pref_add_choice(ppref, "'on' = on, 'off' = off", "word");
+  purple_plugin_pref_add_choice(ppref, "'0 blink' = on, '0 on' = off", "pair");
+  purple_plugin_pref_add_choice(ppref, "XSet (Specify LED number in filename)", "xset");
+  purple_plugin_pref_frame_add(frame, ppref);
+
   return frame;
 }
 
@@ -226,9 +211,9 @@ static gboolean plugin_unload(PurplePlugin *plugin) {
   return TRUE;
 }
 
-static PidginPluginUiInfo ui_info = {
-  plugin_config_frame,
-  0 /* page_num (Reserved) */
+static PurplePluginUiInfo prefs_info = 
+{
+	get_plugin_pref_frame
 };
 
 static PurplePluginInfo info = {
@@ -236,7 +221,7 @@ static PurplePluginInfo info = {
   PURPLE_MAJOR_VERSION,
   PURPLE_MINOR_VERSION,
   PURPLE_PLUGIN_STANDARD,
-  PIDGIN_PLUGIN_TYPE,
+  NULL,
   0,
   NULL,
   PURPLE_PRIORITY_DEFAULT,
@@ -254,9 +239,9 @@ static PurplePluginInfo info = {
   plugin_unload, /* unload */
   NULL,          /* destroy */
 
-  &ui_info,
   NULL,
   NULL,
+  &prefs_info,
   NULL
 };
 
