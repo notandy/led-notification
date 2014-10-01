@@ -3,7 +3,7 @@ I am not the original author. I found this plugin and forked it because I wanted
 Below is the original README text.
 ==========
 
-Led-notification, a Pidgin plugin
+Led-notification, a Purple plugin (Pidgin, Finch, ...)
 ----------------
 
 Led-notification can control leds found on some laptops, or anything else that is controlled by writing '1' or '0' to a file.
@@ -19,4 +19,10 @@ Version 0.1
     * Initial version 
 
 Version 0.2
+
     * Add XSet support <tswsl1989@sucs.org>
+
+Version 0.3
+
+    * Ported to pure libpurple <andy@ndyk.de>
+    
